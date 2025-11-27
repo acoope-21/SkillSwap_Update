@@ -18,9 +18,14 @@ CREATE TABLE users (
     date_of_birth DATE,
     university VARCHAR(255),
     email_verified BOOLEAN DEFAULT FALSE,
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    show_location BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP
 );
+
+CREATE INDEX idx_users_location ON users(latitude, longitude) WHERE show_location = TRUE;
 
 
 -- PROFILE
@@ -32,6 +37,9 @@ CREATE TABLE profile (
     year VARCHAR(50),
     bio TEXT,
     location VARCHAR(255),
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    show_location BOOLEAN DEFAULT FALSE,
     career_goals TEXT,
     availability VARCHAR(100),
     linkedin VARCHAR(255),
@@ -44,6 +52,8 @@ CREATE TABLE profile (
     profile_complete BOOLEAN DEFAULT FALSE,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_profile_location ON profile(latitude, longitude) WHERE show_location = TRUE;
 
 
 -- PROFILE_PHOTO
@@ -161,7 +171,7 @@ CREATE INDEX idx_message_senderid ON message(sender_id);
 
 
 -- Default test users to test every table
-INSERT INTO users (email, password_hash, first_name, last_name, university, email_verified)
+INSERT INTO users (email, password_hash, first_name, last_name, university, email_verified, latitude, longitude)
 VALUES 
-  ('test@example.com', '12345', 'Test', 'User', 'MGA', TRUE),
-  ('test2@example.com', '12345', 'Second', 'User', 'MGA', TRUE);
+  ('test@example.com', '12345', 'Test', 'User', 'MGA', TRUE, 32.811818, -83.731341),
+  ('test2@example.com', '12345', 'Second', 'User', 'MGA', TRUE, 32.616361, -83.607028);

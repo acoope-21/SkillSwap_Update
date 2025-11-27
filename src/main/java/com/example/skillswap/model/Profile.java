@@ -21,6 +21,15 @@ public class Profile {
     @Column(name = "location")
     private String location;
 
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
+    @Column(name = "show_location")
+    private Boolean showLocation = false;
+
     @Column(name = "major")
     private String major;
 
@@ -66,6 +75,15 @@ public class Profile {
 
     public String getLocation() { return location; }
     public void setLocation(String location) { this.location = location; }
+
+    public Double getLatitude() { return latitude; }
+    public void setLatitude(Double latitude) { this.latitude = latitude; }
+
+    public Double getLongitude() { return longitude; }
+    public void setLongitude(Double longitude) { this.longitude = longitude; }
+
+    public Boolean getShowLocation() { return showLocation; }
+    public void setShowLocation(Boolean showLocation) { this.showLocation = showLocation; }
 
     public String getMajor() { return major; }
     public void setMajor(String major) { this.major = major; }

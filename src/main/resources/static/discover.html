@@ -75,6 +75,20 @@
                 </div>
             </div>
 
+            <div class="filter-section">
+                <h3>Location</h3>
+                <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="filter-by-location" onchange="toggleLocationFilter()">
+                    <span>Show nearby users only</span>
+                </label>
+                <div id="location-filter-options" style="display: none; margin-top: 0.5rem;">
+                    <label for="max-distance" style="display: block; margin-bottom: 0.25rem; font-size: 0.9rem;">Max distance (km):</label>
+                    <input type="range" id="max-distance" min="5" max="200" value="50" step="5" 
+                           oninput="updateDistanceLabel(this.value)" style="width: 100%;">
+                    <div id="distance-label" style="text-align: center; font-size: 0.9rem; color: #667eea; margin-top: 0.25rem;">50 km</div>
+                </div>
+            </div>
+
             <div class="stats-section">
                 <h3>YOUR STATS</h3>
                 <div class="stat-item">
@@ -153,7 +167,9 @@
         let swipedUserIds = new Set();
         let activeFilters = {
             years: [],
-            interests: []
+            interests: [],
+            locationEnabled: false,
+            maxDistance: 50 // kilometers
         };
 
         // Load stats on page load
@@ -180,6 +196,56 @@
                 const usersResponse = await fetch('/api/users');
                 const allUsers = await usersResponse.json();
 
+                // Get all profiles
+                const profilesResponse = await fetch('/api/profiles');
+                const allProfiles = await profilesResponse.json();
+
+                // Get current user
+                const currentUser = allUsers.find(u => u.userId === currentUserId);
+                const currentUserProfile = allProfiles.find(p => p.user?.userId === currentUserId);
+
+                // Get current user's location (prefer User table, fallback to Profile)
+                // IMPORTANT: Only use location if showLocation is true (privacy setting)
+                console.log('=== LOADING USERS FOR DISCOVER PAGE ===');
+                console.log('Current User ID:', currentUserId);
+                console.log('Current User object:', currentUser);
+                console.log('Current User Profile object:', currentUserProfile);
+                
+                let currentLat = null, currentLon = null;
+                let currentUserShowLocation = false;
+                
+                if (currentUser && currentUser.latitude && currentUser.longitude && currentUser.showLocation === true) {
+                    currentLat = currentUser.latitude;
+                    currentLon = currentUser.longitude;
+                    currentUserShowLocation = true;
+                    console.log('✅ Using User table location (showLocation enabled):', { 
+                        latitude: currentLat, 
+                        longitude: currentLon,
+                        showLocation: currentUser.showLocation,
+                        source: 'User table'
+                    });
+                } else if (currentUserProfile && currentUserProfile.latitude && currentUserProfile.longitude && currentUserProfile.showLocation === true) {
+                    currentLat = currentUserProfile.latitude;
+                    currentLon = currentUserProfile.longitude;
+                    currentUserShowLocation = true;
+                    console.log('✅ Using Profile table location (showLocation enabled):', { 
+                        latitude: currentLat, 
+                        longitude: currentLon,
+                        showLocation: currentUserProfile.showLocation,
+                        source: 'Profile table'
+                    });
+                } else {
+                    console.log('⚠️ Current user location not available or showLocation is disabled');
+                    console.log('User table has location:', currentUser?.latitude && currentUser?.longitude);
+                    console.log('User table showLocation:', currentUser?.showLocation);
+                    console.log('Profile table has location:', currentUserProfile?.latitude && currentUserProfile?.longitude);
+                    console.log('Profile table showLocation:', currentUserProfile?.showLocation);
+                    console.log('📍 Distance will NOT be calculated or displayed (privacy: showLocation is false)');
+                }
+                
+                // Store current user's showLocation status globally for use in displayCurrentUser
+                window.currentUserShowLocation = currentUserShowLocation;
+
                 // Get swiped users
                 const swipesResponse = await fetch(`/api/swipes/user/${currentUserId}`);
                 const swipes = await swipesResponse.json();
@@ -190,13 +256,112 @@
                 });
 
                 // Filter out current user and already swiped users
-                currentUsers = allUsers.filter(user => 
+                let filteredUsers = allUsers.filter(user => 
                     user.userId !== currentUserId && !swipedUserIds.has(user.userId)
                 );
 
+                // Apply location filter if enabled
+                if (activeFilters.locationEnabled && currentLat && currentLon) {
+                    filteredUsers = filteredUsers.filter(user => {
+                        // Check User table first, then Profile table
+                        let userLat = null, userLon = null, showLocation = false;
+                        
+                        if (user.latitude && user.longitude && user.showLocation) {
+                            userLat = user.latitude;
+                            userLon = user.longitude;
+                            showLocation = true;
+                            console.log(`User ${user.userId} location from User table:`, { 
+                                latitude: userLat, 
+                                longitude: userLon,
+                                showLocation: user.showLocation
+                            });
+                        } else {
+                            const userProfile = allProfiles.find(p => p.user?.userId === user.userId);
+                            if (userProfile && userProfile.showLocation && 
+                                userProfile.latitude && userProfile.longitude) {
+                                userLat = userProfile.latitude;
+                                userLon = userProfile.longitude;
+                                showLocation = true;
+                                console.log(`User ${user.userId} location from Profile table:`, { 
+                                    latitude: userLat, 
+                                    longitude: userLon,
+                                    showLocation: userProfile.showLocation
+                                });
+                            } else {
+                                console.log(`User ${user.userId} has no location or showLocation is false`);
+                            }
+                        }
+                        
+                        if (!showLocation || !userLat || !userLon) {
+                            return false;
+                        }
+                        
+                        // Calculate distance
+                        console.log(`=== DISTANCE CALCULATION for User ${user.userId} ===`);
+                        console.log('Current user location:', { latitude: currentLat, longitude: currentLon });
+                        console.log('Other user location:', { latitude: userLat, longitude: userLon });
+                        const distance = calculateDistance(currentLat, currentLon, userLat, userLon);
+                        console.log('Calculated distance:', distance.toFixed(2), 'km');
+                        console.log('Max distance filter:', activeFilters.maxDistance, 'km');
+                        console.log('Within range:', distance <= activeFilters.maxDistance);
+                        
+                        // Store distance in user object for display
+                        user._distance = distance;
+                        
+                        return distance <= activeFilters.maxDistance;
+                    });
+                } else {
+                    // Calculate and store distance for all users (for display purposes)
+                    // ONLY if both current user and other user have showLocation enabled
+                    if (currentLat && currentLon && currentUserShowLocation) {
+                        filteredUsers.forEach(user => {
+                            let userLat = null, userLon = null;
+                            let otherUserShowLocation = false;
+                            
+                            // Check User table first
+                            if (user.latitude && user.longitude && user.showLocation === true) {
+                                userLat = user.latitude;
+                                userLon = user.longitude;
+                                otherUserShowLocation = true;
+                            } else {
+                                // Check Profile table
+                                const userProfile = allProfiles.find(p => p.user?.userId === user.userId);
+                                if (userProfile && userProfile.latitude && userProfile.longitude && userProfile.showLocation === true) {
+                                    userLat = userProfile.latitude;
+                                    userLon = userProfile.longitude;
+                                    otherUserShowLocation = true;
+                                }
+                            }
+                            
+                            // Only calculate distance if BOTH users have showLocation enabled
+                            if (userLat && userLon && otherUserShowLocation) {
+                                user._distance = calculateDistance(currentLat, currentLon, userLat, userLon);
+                                console.log(`Distance calculated for user ${user.userId} (both users have showLocation enabled):`, user._distance.toFixed(2), 'km');
+                            } else {
+                                // Clear any existing distance if privacy settings don't allow it
+                                user._distance = undefined;
+                                if (userLat && userLon) {
+                                    console.log(`Distance NOT calculated for user ${user.userId} (showLocation is false - privacy protected)`);
+                                }
+                            }
+                        });
+                    } else {
+                        // Clear distances for all users if current user doesn't have showLocation enabled
+                        filteredUsers.forEach(user => {
+                            user._distance = undefined;
+                        });
+                        if (!currentUserShowLocation) {
+                            console.log('📍 Current user has showLocation disabled - no distances will be calculated or displayed');
+                        }
+                    }
+                }
+
                 // Apply year filter if any selected
                 if (activeFilters.years.length > 0) {
-                    // TODO: Filter by profile year when profile data is available
+                    filteredUsers = filteredUsers.filter(user => {
+                        const userProfile = allProfiles.find(p => p.user?.userId === user.userId);
+                        return userProfile && activeFilters.years.includes(userProfile.year);
+                    });
                 }
 
                 // Apply interest filter if any selected
@@ -204,11 +369,40 @@
                     // TODO: Filter by interests when interest data is available
                 }
 
+                currentUsers = filteredUsers;
                 currentIndex = 0;
                 displayCurrentUser();
             } catch (error) {
                 document.getElementById('user-card-container').innerHTML = 
                     '<div class="error">Error loading users: ' + error.message + '</div>';
+            }
+        }
+        
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in kilometers
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+        
+        function toggleLocationFilter() {
+            const checkbox = document.getElementById('filter-by-location');
+            const optionsDiv = document.getElementById('location-filter-options');
+            activeFilters.locationEnabled = checkbox.checked;
+            optionsDiv.style.display = checkbox.checked ? 'block' : 'none';
+            loadUsers();
+        }
+        
+        function updateDistanceLabel(value) {
+            document.getElementById('distance-label').textContent = value + ' km';
+            activeFilters.maxDistance = parseInt(value);
+            if (activeFilters.locationEnabled) {
+                loadUsers();
             }
         }
 
@@ -225,8 +419,62 @@
             const user = currentUsers[currentIndex];
             const age = user.dateOfBirth ? new Date().getFullYear() - new Date(user.dateOfBirth).getFullYear() : '';
             
+            // Get user location (prefer User table, fallback to Profile)
+            const userLocation = user.latitude && user.longitude ? 
+                (user.showLocation ? 'Location visible' : '') : '';
+            
             // Load profile data if available
             loadUserProfile(user.userId).then(profile => {
+                // Determine location display
+                let locationDisplay = profile?.location || 'Location not set';
+                let locationStatus = '';
+                
+                if (user.showLocation && user.latitude && user.longitude) {
+                    locationStatus = '<span style="color: #28a745; margin-left: 0.5rem;">✓ Location visible</span>';
+                } else if (profile?.showLocation && profile?.latitude && profile?.longitude) {
+                    locationStatus = '<span style="color: #28a745; margin-left: 0.5rem;">✓ Location visible</span>';
+                }
+                
+                // Display distance ONLY if both users have showLocation enabled
+                // Check if current user has showLocation enabled (from global variable set in loadUsers)
+                const currentUserShowLocation = window.currentUserShowLocation || false;
+                
+                // Check if other user has showLocation enabled
+                let otherUserShowLocation = false;
+                if (user.showLocation === true && user.latitude && user.longitude) {
+                    otherUserShowLocation = true;
+                } else if (profile?.showLocation === true && profile?.latitude && profile?.longitude) {
+                    otherUserShowLocation = true;
+                }
+                
+                // Only display distance if BOTH users have opted to share location
+                // The distance should only be calculated if both users have showLocation enabled
+                // (this is handled in loadUsers function, but we double-check here for privacy)
+                let distanceDisplay = '';
+                if (user._distance !== undefined && currentUserShowLocation && otherUserShowLocation) {
+                    // Both users have showLocation enabled, safe to display distance
+                    const distance = user._distance;
+                    let distanceText = '';
+                    if (distance < 1) {
+                        distanceText = Math.round(distance * 1000) + ' m away';
+                    } else if (distance < 10) {
+                        distanceText = distance.toFixed(1) + ' km away';
+                    } else {
+                        distanceText = Math.round(distance) + ' km away';
+                    }
+                    distanceDisplay = `<div class="detail-item" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #eee;">
+                        <span class="detail-icon">📏</span>
+                        <span style="font-weight: 600; color: #667eea;">${distanceText}</span>
+                    </div>`;
+                } else if (user._distance !== undefined) {
+                    // Distance was calculated but shouldn't be shown due to privacy
+                    console.log(`🔒 Distance not displayed for user ${user.userId} - privacy check failed:`);
+                    console.log(`   Current user showLocation: ${currentUserShowLocation}`);
+                    console.log(`   Other user showLocation: ${otherUserShowLocation}`);
+                    // Clear the distance to ensure it's not displayed
+                    user._distance = undefined;
+                }
+                
                 container.innerHTML = `
                     <button class="view-full-profile-btn" onclick="viewFullProfile(${user.userId})">View Full Profile ></button>
                     <div class="profile-image-placeholder">
@@ -245,8 +493,10 @@
                             </div>
                             <div class="detail-item">
                                 <span class="detail-icon">📍</span>
-                                <span>${profile?.location || 'Location not set'}</span>
+                                <span>${locationDisplay}</span>
+                                ${locationStatus}
                             </div>
+                            ${distanceDisplay}
                         </div>
                         <div class="about-section">
                             <h3>ABOUT</h3>

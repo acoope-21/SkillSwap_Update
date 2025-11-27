@@ -98,7 +98,31 @@
                         
                         <div class="form-group">
                             <label for="location">Location</label>
-                            <input type="text" id="location" name="location" placeholder="e.g., Atlanta, GA">
+                            <div style="position: relative;">
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="text" id="location" name="location" placeholder="e.g., Atlanta, GA or New York, NY" 
+                                           style="flex: 1;" autocomplete="off" oninput="handleLocationInput()" 
+                                           onfocus="handleLocationFocus()" onblur="handleLocationBlur()"
+                                           onkeydown="handleLocationKeyDown(event)">
+                                    <button type="button" class="btn btn-secondary" onclick="usePreciseLocation()" style="white-space: nowrap;">
+                                        📍 Use My Location
+                                    </button>
+                                </div>
+                                <div id="location-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; 
+                                    background: white; border: 1px solid #ddd; border-radius: 4px; margin-top: 2px; 
+                                    max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                </div>
+                            </div>
+                            <div style="margin-top: 0.25rem; font-size: 0.85rem; color: #666;">
+                                💡 Tip: Start typing to see city suggestions
+                            </div>
+                            <div style="margin-top: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="showLocation" name="showLocation">
+                                    <span>Show my location for matching (allows others to find me by location)</span>
+                                </label>
+                            </div>
+                            <div id="location-status" style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;"></div>
                         </div>
 
                         <div class="form-group">
@@ -311,6 +335,7 @@
                     document.getElementById('major').value = currentProfile.major || '';
                     document.getElementById('year').value = currentProfile.year || '';
                     document.getElementById('location').value = currentProfile.location || '';
+                    document.getElementById('showLocation').checked = currentProfile.showLocation || false;
                     document.getElementById('career-goals').value = currentProfile.careerGoals || '';
                     document.getElementById('availability').value = currentProfile.availability || '';
                     document.getElementById('linkedin').value = currentProfile.linkedin || '';
@@ -320,6 +345,9 @@
                     document.getElementById('career-experience').value = currentProfile.careerExperience || '';
                     document.getElementById('research-publications').value = currentProfile.researchPublications || '';
                     document.getElementById('awards').value = currentProfile.awards || '';
+                    
+                    // Update location status
+                    updateLocationStatus(currentProfile);
                 }
 
                 // Load languages, skills, interests, organizations
@@ -448,13 +476,21 @@
                 // Update the user object for profile data
                 user = updatedUser;
 
+                // Show geocoding status if location is provided
+                const locationValue = document.getElementById('location').value.trim();
+                const statusDiv = document.getElementById('location-status');
+                if (locationValue) {
+                    statusDiv.innerHTML = '<span style="color: #667eea;">📍 Geocoding location...</span>';
+                }
+
                 // Update profile data
                 const profileData = {
                     user: user,
                     bio: document.getElementById('bio').value,
                     major: document.getElementById('major').value,
                     year: document.getElementById('year').value,
-                    location: document.getElementById('location').value,
+                    location: locationValue,
+                    showLocation: document.getElementById('showLocation').checked,
                     careerGoals: document.getElementById('career-goals').value,
                     availability: document.getElementById('availability').value,
                     linkedin: document.getElementById('linkedin').value,
@@ -484,16 +520,34 @@
                 if (response.ok) {
                     const savedProfile = await response.json();
                     currentProfile = savedProfile;
+                    
+                    // Update location status based on geocoding result
+                    if (locationValue) {
+                        if (savedProfile.latitude && savedProfile.longitude) {
+                            statusDiv.innerHTML = '<span style="color: #28a745;">✅ Location geocoded successfully!</span>';
+                        } else {
+                            statusDiv.innerHTML = '<span style="color: #ffc107;">⚠️ Location saved but could not be geocoded. Please use "City, State" format or use "Use My Location" button.</span>';
+                        }
+                    } else {
+                        statusDiv.innerHTML = '';
+                    }
+                    
                     document.getElementById('profile-message').innerHTML = 
                         '<div class="success-message">Profile saved successfully!</div>';
                     setTimeout(() => {
                         document.getElementById('profile-message').innerHTML = '';
-                    }, 3000);
+                        if (locationValue && savedProfile.latitude && savedProfile.longitude) {
+                            statusDiv.innerHTML = '';
+                        }
+                    }, 5000);
                     loadProfile();
                 } else {
                     const errorText = await response.text();
                     document.getElementById('profile-message').innerHTML = 
                         '<div class="error-message">Error saving profile: ' + errorText + '</div>';
+                    if (locationValue) {
+                        statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Error geocoding location.</span>';
+                    }
                 }
             } catch (error) {
                 document.getElementById('profile-message').innerHTML = 
@@ -761,6 +815,516 @@
                     console.error('Error deleting organization:', error);
                 }
             }
+        }
+
+        function usePreciseLocation() {
+            const statusDiv = document.getElementById('location-status');
+            statusDiv.innerHTML = '<span style="color: #667eea;">📍 Getting your location...</span>';
+            
+            if (!navigator.geolocation) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">Geolocation is not supported by your browser.</span>';
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const accuracy = position.coords.accuracy; // Accuracy in meters
+                    
+                    // Debug: Log coordinates to verify they're correct
+                    console.log('Browser geolocation coordinates:', { latitude: lat, longitude: lon, accuracy: accuracy });
+                    
+                    // Display location details immediately
+                    let locationInfo = `
+                        <div style="background: #f8f9fa; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; border: 1px solid #dee2e6;">
+                            <div style="font-weight: 600; margin-bottom: 0.5rem; color: #28a745;">📍 Location Detected</div>
+                            <div style="font-size: 0.9rem; margin-bottom: 0.25rem;">
+                                <strong>Coordinates:</strong> ${lon.toFixed(6)}, ${lat.toFixed(6)}
+                            </div>
+                            <div style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #666;">
+                                <strong>Accuracy:</strong> ±${Math.round(accuracy)} meters
+                            </div>
+                            <div style="font-size: 0.85rem; color: #666; margin-bottom: 0.5rem;">
+                                <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" 
+                                   style="color: #667eea; text-decoration: none;">
+                                    🗺️ View on Google Maps
+                                </a>
+                            </div>
+                            <div style="font-size: 0.85rem; color: #666;">
+                                <em>Reverse geocoding address...</em>
+                            </div>
+                        </div>
+                    `;
+                    statusDiv.innerHTML = locationInfo;
+                    
+                    try {
+                        // Reverse geocode to get detailed address
+                        const reverseGeocodeUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`;
+                        console.log('=== REVERSE GEOCODING ===');
+                        console.log('Request URL:', reverseGeocodeUrl);
+                        console.log('Coordinates used for reverse geocoding:', { latitude: lat, longitude: lon });
+                        
+                        const response = await fetch(reverseGeocodeUrl, {
+                            headers: {
+                                'User-Agent': 'SkillSwap/1.0'
+                            }
+                        });
+                        const data = await response.json();
+                        console.log('Reverse geocoding response:', data);
+                        console.log('Full address object:', data.address);
+                        
+                        // Build detailed address
+                        let cityName = '';
+                        let fullAddress = '';
+                        if (data.address) {
+                            const addr = data.address;
+                            
+                            // Build city name (City, State format)
+                            const city = addr.city || addr.town || addr.village || addr.municipality || '';
+                            const state = addr.state || '';
+                            const stateCode = addr.state_code || '';
+                            
+                            if (city && (state || stateCode)) {
+                                cityName = `${city}, ${stateCode || state}`;
+                            } else if (city) {
+                                cityName = city;
+                            } else if (state) {
+                                cityName = state;
+                            }
+                            
+                            // Build full address for verification
+                            const addressParts = [];
+                            if (addr.house_number) addressParts.push(addr.house_number);
+                            if (addr.road) addressParts.push(addr.road);
+                            if (city) addressParts.push(city);
+                            if (stateCode || state) addressParts.push(stateCode || state);
+                            if (addr.postcode) addressParts.push(addr.postcode);
+                            if (addr.country) addressParts.push(addr.country);
+                            
+                            fullAddress = addressParts.join(', ');
+                        }
+                        
+                        // Update location field
+                        document.getElementById('location').value = cityName || `${lon.toFixed(4)}, ${lat.toFixed(4)}`;
+                        console.log('City name extracted:', cityName);
+                        console.log('Full address:', fullAddress);
+                        console.log('Location field value set to:', document.getElementById('location').value);
+                        
+                        // Update display with full address
+                        locationInfo = `
+                            <div style="background: #f8f9fa; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; border: 1px solid #dee2e6;">
+                                <div style="font-weight: 600; margin-bottom: 0.5rem; color: #28a745;">✅ Location Verified</div>
+                                <div style="font-size: 0.9rem; margin-bottom: 0.25rem;">
+                                    <strong>Coordinates:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}
+                                </div>
+                                <div style="font-size: 0.9rem; margin-bottom: 0.25rem; color: #666;">
+                                    <strong>Accuracy:</strong> ±${Math.round(accuracy)} meters
+                                </div>
+                                ${fullAddress ? `
+                                <div style="font-size: 0.9rem; margin-bottom: 0.5rem; padding: 0.5rem; background: white; border-radius: 3px;">
+                                    <strong>Address:</strong><br>
+                                    ${fullAddress}
+                                </div>
+                                ` : ''}
+                                <div style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+                                    <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" 
+                                       style="color: #667eea; text-decoration: none; margin-right: 1rem;">
+                                        🗺️ View on Google Maps
+                                    </a>
+                                    <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=15" target="_blank" 
+                                       style="color: #667eea; text-decoration: none;">
+                                        🗺️ View on OpenStreetMap
+                                    </a>
+                                </div>
+                                <div style="font-size: 0.85rem; color: #666; font-style: italic;">
+                                    Saving location...
+                                </div>
+                            </div>
+                        `;
+                        statusDiv.innerHTML = locationInfo;
+                        
+                        // Update both User and Profile with coordinates
+                        const showLocation = document.getElementById('showLocation').checked;
+                        
+                        console.log('=== PREPARING TO SAVE LOCATION ===');
+                        console.log('Current User ID:', currentUserId);
+                        console.log('Current Profile ID:', currentProfile?.profileId);
+                        console.log('Show Location checkbox:', showLocation);
+                        console.log('Coordinates to save:', { latitude: lat, longitude: lon });
+                        console.log('Location text:', cityName || document.getElementById('location').value);
+                        
+                        const locationData = {
+                            latitude: lat,
+                            longitude: lon,
+                            location: cityName || document.getElementById('location').value,
+                            showLocation: showLocation
+                        };
+                        
+                        // Update User table location
+                        const userLocationData = {
+                            latitude: lat,
+                            longitude: lon,
+                            showLocation: showLocation
+                        };
+                        
+                        console.log('=== SENDING TO BACKEND ===');
+                        console.log('User location data being sent:', JSON.stringify(userLocationData, null, 2));
+                        console.log('Profile location data being sent:', JSON.stringify(locationData, null, 2));
+                        
+                        try {
+                            // Update user location
+                            console.log('Making PUT request to:', `/api/users/${currentUserId}/location`);
+                            const userUpdateResponse = await fetch(`/api/users/${currentUserId}/location`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(userLocationData)
+                            });
+                            console.log('User update response status:', userUpdateResponse.status);
+                            const userUpdateResult = await userUpdateResponse.json();
+                            console.log('User update response data:', userUpdateResult);
+                            
+                            // Update profile location if profile exists
+                            if (currentProfile && currentProfile.profileId) {
+                                console.log('Making PUT request to:', `/api/profiles/${currentProfile.profileId}/location`);
+                                const profileUpdateResponse = await fetch(`/api/profiles/${currentProfile.profileId}/location`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(locationData)
+                                });
+                                console.log('Profile update response status:', profileUpdateResponse.status);
+                                const profileUpdateResult = await profileUpdateResponse.json();
+                                console.log('Profile update response data:', profileUpdateResult);
+                                
+                                if (profileUpdateResponse.ok && userUpdateResponse.ok) {
+                                    console.log('=== VERIFYING SAVED COORDINATES ===');
+                                    // Verify saved coordinates match what we sent
+                                    const verifyProfileResponse = await fetch(`/api/profiles/${currentProfile.profileId}`);
+                                    const verifyUserResponse = await fetch(`/api/users/${currentUserId}`);
+                                    const verifiedProfile = await verifyProfileResponse.json();
+                                    const verifiedUser = await verifyUserResponse.json();
+                                    
+                                    console.log('=== COORDINATE VERIFICATION ===');
+                                    console.log('Original coordinates from browser:', { latitude: lat, longitude: lon });
+                                    console.log('Coordinates sent to backend:', { latitude: lat, longitude: lon });
+                                    console.log('Coordinates saved in Profile table:', { 
+                                        latitude: verifiedProfile.latitude, 
+                                        longitude: verifiedProfile.longitude,
+                                        showLocation: verifiedProfile.showLocation,
+                                        location: verifiedProfile.location
+                                    });
+                                    console.log('Coordinates saved in User table:', { 
+                                        latitude: verifiedUser.latitude, 
+                                        longitude: verifiedUser.longitude,
+                                        showLocation: verifiedUser.showLocation
+                                    });
+                                    
+                                    // Check for mismatches
+                                    const profileMatch = verifiedProfile.latitude === lat && verifiedProfile.longitude === lon;
+                                    const userMatch = verifiedUser.latitude === lat && verifiedUser.longitude === lon;
+                                    console.log('Profile coordinates match:', profileMatch);
+                                    console.log('User coordinates match:', userMatch);
+                                    
+                                    if (!profileMatch || !userMatch) {
+                                        console.error('⚠️ COORDINATE MISMATCH DETECTED!');
+                                        console.error('Expected:', { latitude: lat, longitude: lon });
+                                        console.error('Profile has:', { latitude: verifiedProfile.latitude, longitude: verifiedProfile.longitude });
+                                        console.error('User has:', { latitude: verifiedUser.latitude, longitude: verifiedUser.longitude });
+                                    }
+                                    
+                                    locationInfo = `
+                                        <div style="background: #d4edda; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; border: 1px solid #c3e6cb;">
+                                            <div style="font-weight: 600; margin-bottom: 0.5rem; color: #155724;">✅ Location Saved Successfully</div>
+                                            <div style="font-size: 0.9rem; margin-bottom: 0.25rem;">
+                                                <strong>Coordinates (Lat, Lon):</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}
+                                            </div>
+                                            <div style="font-size: 0.85rem; margin-bottom: 0.25rem; color: #666;">
+                                                <strong>Saved in Profile:</strong> Lat ${verifiedProfile.latitude?.toFixed(6) || 'N/A'}, Lon ${verifiedProfile.longitude?.toFixed(6) || 'N/A'}<br>
+                                                <strong>Saved in User:</strong> Lat ${verifiedUser.latitude?.toFixed(6) || 'N/A'}, Lon ${verifiedUser.longitude?.toFixed(6) || 'N/A'}
+                                            </div>
+                                            ${fullAddress ? `
+                                            <div style="font-size: 0.9rem; margin-bottom: 0.5rem; padding: 0.5rem; background: white; border-radius: 3px;">
+                                                <strong>Address:</strong><br>
+                                                ${fullAddress}
+                                            </div>
+                                            ` : ''}
+                                            <div style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+                                                <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" 
+                                                   style="color: #155724; text-decoration: none; margin-right: 1rem;">
+                                                    🗺️ View on Google Maps
+                                                </a>
+                                                <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=15" target="_blank" 
+                                                   style="color: #155724; text-decoration: none;">
+                                                    🗺️ View on OpenStreetMap
+                                                </a>
+                                            </div>
+                                            <div style="font-size: 0.85rem; color: #155724;">
+                                                Location saved to your profile. You can verify it's correct using the map links above.
+                                            </div>
+                                        </div>
+                                    `;
+                                    statusDiv.innerHTML = locationInfo;
+                                    setTimeout(() => {
+                                        loadProfile();
+                                    }, 2000);
+                                } else {
+                                    statusDiv.innerHTML = '<span style="color: #dc3545;">Error updating location.</span>';
+                                }
+                            } else if (userUpdateResponse.ok) {
+                                locationInfo = `
+                                    <div style="background: #d4edda; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; border: 1px solid #c3e6cb;">
+                                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #155724;">✅ Location Saved</div>
+                                        <div style="font-size: 0.9rem; margin-bottom: 0.25rem;">
+                                            <strong>Coordinates:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}
+                                        </div>
+                                        ${fullAddress ? `
+                                        <div style="font-size: 0.9rem; margin-bottom: 0.5rem; padding: 0.5rem; background: white; border-radius: 3px;">
+                                            <strong>Address:</strong><br>
+                                            ${fullAddress}
+                                        </div>
+                                        ` : ''}
+                                        <div style="font-size: 0.85rem;">
+                                            <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" 
+                                               style="color: #155724; text-decoration: none;">
+                                                🗺️ Verify on Google Maps
+                                            </a>
+                                        </div>
+                                    </div>
+                                `;
+                                statusDiv.innerHTML = locationInfo;
+                            } else {
+                                statusDiv.innerHTML = '<span style="color: #dc3545;">Error updating location.</span>';
+                            }
+                        } catch (error) {
+                            console.error('Error updating location:', error);
+                            statusDiv.innerHTML = '<span style="color: #dc3545;">Error updating location: ' + error.message + '</span>';
+                        }
+                    } catch (error) {
+                        console.error('Error reverse geocoding:', error);
+                        statusDiv.innerHTML = `
+                            <div style="background: #fff3cd; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; border: 1px solid #ffc107;">
+                                <div style="font-weight: 600; margin-bottom: 0.5rem; color: #856404;">⚠️ Coordinates Saved</div>
+                                <div style="font-size: 0.9rem; margin-bottom: 0.25rem;">
+                                    <strong>Coordinates:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}
+                                </div>
+                                <div style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #856404;">
+                                    Could not get address name, but coordinates were saved. You can verify the location using the map link below.
+                                </div>
+                                <div style="font-size: 0.85rem;">
+                                    <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" 
+                                       style="color: #856404; text-decoration: none;">
+                                        🗺️ View on Google Maps
+                                    </a>
+                                </div>
+                            </div>
+                        `;
+                    }
+                },
+                (error) => {
+                    let errorMsg = 'Error getting location: ';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMsg += 'Permission denied. Please enable location access.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMsg += 'Location unavailable.';
+                            break;
+                        case error.TIMEOUT:
+                            errorMsg += 'Request timeout.';
+                            break;
+                        default:
+                            errorMsg += 'Unknown error.';
+                            break;
+                    }
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">${errorMsg}</span>`;
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+        
+        function updateLocationStatus(profile) {
+            const statusDiv = document.getElementById('location-status');
+            if (profile.latitude && profile.longitude) {
+                const lat = profile.latitude;
+                const lon = profile.longitude;
+                statusDiv.innerHTML = `
+                    <div style="background: #e7f3ff; padding: 0.75rem; border-radius: 5px; margin-top: 0.5rem; border: 1px solid #b3d9ff;">
+                        <div style="font-size: 0.9rem; margin-bottom: 0.25rem;">
+                            <strong>✅ Location Set:</strong> ${lon.toFixed(6)}, ${lat.toFixed(6)}
+                        </div>
+                        <div style="font-size: 0.85rem;">
+                            <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" 
+                               style="color: #0066cc; text-decoration: none; margin-right: 1rem;">
+                                🗺️ Verify on Google Maps
+                            </a>
+                            <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=15" target="_blank" 
+                               style="color: #0066cc; text-decoration: none;">
+                                🗺️ Verify on OpenStreetMap
+                            </a>
+                        </div>
+                    </div>
+                `;
+            } else if (profile.location) {
+                statusDiv.innerHTML = `<span style="color: #ffc107;">⚠️ Location text set but coordinates not found. Try using "Use My Location" button.</span>`;
+            } else {
+                statusDiv.innerHTML = '';
+            }
+        }
+
+        // Autocomplete functionality
+        let locationSuggestionsTimeout = null;
+        let isSelectingSuggestion = false;
+        let currentSuggestionIndex = -1;
+        let currentSuggestions = [];
+
+        async function handleLocationInput() {
+            const input = document.getElementById('location');
+            const query = input.value.trim();
+            const suggestionsDiv = document.getElementById('location-suggestions');
+
+            // Clear previous timeout
+            if (locationSuggestionsTimeout) {
+                clearTimeout(locationSuggestionsTimeout);
+            }
+
+            // Reset suggestion index
+            currentSuggestionIndex = -1;
+
+            // Hide suggestions if input is too short
+            if (query.length < 2) {
+                suggestionsDiv.style.display = 'none';
+                currentSuggestions = [];
+                return;
+            }
+
+            // Debounce the API call
+            locationSuggestionsTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/profiles/cities/suggestions?q=${encodeURIComponent(query)}`);
+                    if (response.ok) {
+                        const suggestions = await response.json();
+                        currentSuggestions = suggestions;
+                        displayLocationSuggestions(suggestions);
+                    }
+                } catch (error) {
+                    console.error('Error fetching city suggestions:', error);
+                }
+            }, 300); // Wait 300ms after user stops typing
+        }
+
+        function displayLocationSuggestions(suggestions) {
+            const suggestionsDiv = document.getElementById('location-suggestions');
+            
+            if (suggestions.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+
+            suggestionsDiv.innerHTML = suggestions.map((suggestion, index) => {
+                const isSelected = index === currentSuggestionIndex;
+                return `
+                <div class="location-suggestion-item" 
+                     data-index="${index}"
+                     onclick="selectLocationSuggestion('${suggestion.replace(/'/g, "\\'")}')"
+                     onmouseover="highlightSuggestion(${index})"
+                     onmouseout="updateSuggestionHighlight()"
+                     style="padding: 0.75rem; cursor: pointer; border-bottom: 1px solid #eee; 
+                            transition: background-color 0.2s; background-color: ${isSelected ? '#f0f0f0' : 'white'};">
+                    <span style="color: #333;">📍 ${suggestion}</span>
+                </div>
+            `;
+            }).join('');
+
+            suggestionsDiv.style.display = 'block';
+        }
+
+        function highlightSuggestion(index) {
+            currentSuggestionIndex = index;
+            updateSuggestionHighlight();
+        }
+
+        function updateSuggestionHighlight() {
+            const items = document.querySelectorAll('.location-suggestion-item');
+            items.forEach((item, index) => {
+                if (index === currentSuggestionIndex) {
+                    item.style.backgroundColor = '#f0f0f0';
+                } else {
+                    item.style.backgroundColor = 'white';
+                }
+            });
+        }
+
+        function selectLocationSuggestion(suggestion) {
+            isSelectingSuggestion = true;
+            const input = document.getElementById('location');
+            input.value = suggestion;
+            document.getElementById('location-suggestions').style.display = 'none';
+            currentSuggestionIndex = -1;
+            currentSuggestions = [];
+            
+            // Trigger geocoding status update
+            const statusDiv = document.getElementById('location-status');
+            statusDiv.innerHTML = '<span style="color: #667eea;">📍 Location selected. Save profile to geocode.</span>';
+            
+            setTimeout(() => {
+                isSelectingSuggestion = false;
+            }, 200);
+        }
+
+        function handleLocationKeyDown(event) {
+            const suggestionsDiv = document.getElementById('location-suggestions');
+            
+            if (suggestionsDiv.style.display === 'none' || currentSuggestions.length === 0) {
+                return;
+            }
+
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                currentSuggestionIndex = Math.min(currentSuggestionIndex + 1, currentSuggestions.length - 1);
+                updateSuggestionHighlight();
+                scrollToSuggestion();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                currentSuggestionIndex = Math.max(currentSuggestionIndex - 1, -1);
+                updateSuggestionHighlight();
+                scrollToSuggestion();
+            } else if (event.key === 'Enter' && currentSuggestionIndex >= 0) {
+                event.preventDefault();
+                selectLocationSuggestion(currentSuggestions[currentSuggestionIndex]);
+            } else if (event.key === 'Escape') {
+                suggestionsDiv.style.display = 'none';
+                currentSuggestionIndex = -1;
+            }
+        }
+
+        function scrollToSuggestion() {
+            if (currentSuggestionIndex >= 0) {
+                const items = document.querySelectorAll('.location-suggestion-item');
+                if (items[currentSuggestionIndex]) {
+                    items[currentSuggestionIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        }
+
+        function handleLocationFocus() {
+            const input = document.getElementById('location');
+            if (input.value.trim().length >= 2) {
+                handleLocationInput();
+            }
+        }
+
+        function handleLocationBlur() {
+            // Delay hiding suggestions to allow click events to fire
+            setTimeout(() => {
+                if (!isSelectingSuggestion) {
+                    document.getElementById('location-suggestions').style.display = 'none';
+                    currentSuggestionIndex = -1;
+                }
+            }, 200);
         }
 
         loadProfile();

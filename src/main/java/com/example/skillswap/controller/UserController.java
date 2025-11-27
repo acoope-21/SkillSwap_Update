@@ -2,6 +2,7 @@ package com.example.skillswap.controller;
 
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.Map;
 import com.example.skillswap.model.User;
 import com.example.skillswap.repository.UserRepository;
 
@@ -42,9 +43,40 @@ public class UserController {
         if (userDetails.getEmail() != null) {
             user.setEmail(userDetails.getEmail());
         }
+        
+        // Update geolocation fields
+        if (userDetails.getLatitude() != null) {
+            user.setLatitude(userDetails.getLatitude());
+        }
+        if (userDetails.getLongitude() != null) {
+            user.setLongitude(userDetails.getLongitude());
+        }
+        if (userDetails.getShowLocation() != null) {
+            user.setShowLocation(userDetails.getShowLocation());
+        }
 
         final User updatedUser = repo.save(user);
         return updatedUser;
+    }
+    
+    /**
+     * Update user location with coordinates (for precise location from browser)
+     */
+    @PutMapping("/{id}/location")
+    public User updateUserLocation(@PathVariable Long id, @RequestBody Map<String, Object> locationData) {
+        User user = repo.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found for this id :: " + id));
+        
+        if (locationData.containsKey("latitude") && locationData.containsKey("longitude")) {
+            user.setLatitude(((Number) locationData.get("latitude")).doubleValue());
+            user.setLongitude(((Number) locationData.get("longitude")).doubleValue());
+        }
+        
+        if (locationData.containsKey("showLocation")) {
+            user.setShowLocation((Boolean) locationData.get("showLocation"));
+        }
+        
+        return repo.save(user);
     }
 
     @GetMapping("/{id}")
