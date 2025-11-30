@@ -38,6 +38,35 @@
                     <input type="text" id="university" name="university" required>
                 </div>
                 
+                <div class="form-group">
+                    <label for="location">Location (Optional)</label>
+                    <div style="position: relative;">
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <input type="text" id="location" name="location" placeholder="e.g., Atlanta, GA or New York, NY" 
+                                   style="flex: 1;" autocomplete="off" oninput="handleLocationInput()" 
+                                   onfocus="handleLocationFocus()" onblur="handleLocationBlur()"
+                                   onkeydown="handleLocationKeyDown(event)">
+                            <button type="button" class="btn btn-secondary" onclick="usePreciseLocation()" style="white-space: nowrap;">
+                                📍 Use My Location
+                            </button>
+                        </div>
+                        <div id="location-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; 
+                            background: white; border: 1px solid #ddd; border-radius: 4px; margin-top: 2px; 
+                            max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.25rem; font-size: 0.85rem; color: #666;">
+                        💡 Tip: Start typing to see city suggestions
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="showLocation" name="showLocation">
+                            <span>Show my location for matching (allows others to find me by location)</span>
+                        </label>
+                    </div>
+                    <div id="location-status" style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;"></div>
+                </div>
+                
                 <button type="submit" class="btn btn-primary">Register</button>
             </form>
             
@@ -52,15 +81,289 @@
 
     <script src="/js/api.js"></script>
     <script>
+        // Store location coordinates for registration
+        let registrationLatitude = null;
+        let registrationLongitude = null;
+        let registrationLocation = '';
+
+        // Autocomplete functionality
+        let locationSuggestionsTimeout = null;
+        let isSelectingSuggestion = false;
+        let currentSuggestionIndex = -1;
+        let currentSuggestions = [];
+
+        async function handleLocationInput() {
+            const input = document.getElementById('location');
+            const query = input.value.trim();
+            const suggestionsDiv = document.getElementById('location-suggestions');
+
+            if (locationSuggestionsTimeout) {
+                clearTimeout(locationSuggestionsTimeout);
+            }
+
+            if (query.length < 2) {
+                suggestionsDiv.style.display = 'none';
+                currentSuggestions = [];
+                return;
+            }
+
+            currentSuggestionIndex = -1;
+
+            locationSuggestionsTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/profiles/cities/suggestions?q=${encodeURIComponent(query)}`);
+                    if (response.ok) {
+                        const suggestions = await response.json();
+                        currentSuggestions = suggestions;
+                        displayLocationSuggestions(suggestions);
+                    }
+                } catch (error) {
+                    console.error('Error fetching city suggestions:', error);
+                }
+            }, 300);
+        }
+
+        function displayLocationSuggestions(suggestions) {
+            const suggestionsDiv = document.getElementById('location-suggestions');
+            
+            if (suggestions.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+
+            suggestionsDiv.innerHTML = suggestions.map((suggestion, index) => {
+                const isSelected = index === currentSuggestionIndex;
+                return `
+                <div class="location-suggestion-item" 
+                     data-index="${index}"
+                     onclick="selectLocationSuggestion('${suggestion.replace(/'/g, "\\'")}')"
+                     onmouseover="highlightSuggestion(${index})"
+                     onmouseout="updateSuggestionHighlight()"
+                     style="padding: 0.75rem; cursor: pointer; border-bottom: 1px solid #eee; 
+                            transition: background-color 0.2s; background-color: ${isSelected ? '#f0f0f0' : 'white'};">
+                    <span style="color: #333;">📍 ${suggestion}</span>
+                </div>
+            `;
+            }).join('');
+
+            suggestionsDiv.style.display = 'block';
+        }
+
+        function highlightSuggestion(index) {
+            currentSuggestionIndex = index;
+            updateSuggestionHighlight();
+        }
+
+        function updateSuggestionHighlight() {
+            const items = document.querySelectorAll('.location-suggestion-item');
+            items.forEach((item, index) => {
+                if (index === currentSuggestionIndex) {
+                    item.style.backgroundColor = '#f0f0f0';
+                } else {
+                    item.style.backgroundColor = 'white';
+                }
+            });
+        }
+
+        function selectLocationSuggestion(suggestion) {
+            isSelectingSuggestion = true;
+            const input = document.getElementById('location');
+            input.value = suggestion;
+            registrationLocation = suggestion;
+            document.getElementById('location-suggestions').style.display = 'none';
+            currentSuggestionIndex = -1;
+            currentSuggestions = [];
+            
+            setTimeout(() => {
+                isSelectingSuggestion = false;
+            }, 200);
+        }
+
+        function handleLocationKeyDown(event) {
+            const suggestionsDiv = document.getElementById('location-suggestions');
+            
+            if (suggestionsDiv.style.display === 'none' || currentSuggestions.length === 0) {
+                return;
+            }
+
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                currentSuggestionIndex = Math.min(currentSuggestionIndex + 1, currentSuggestions.length - 1);
+                updateSuggestionHighlight();
+                scrollToSuggestion();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                currentSuggestionIndex = Math.max(currentSuggestionIndex - 1, -1);
+                updateSuggestionHighlight();
+                scrollToSuggestion();
+            } else if (event.key === 'Enter' && currentSuggestionIndex >= 0) {
+                event.preventDefault();
+                selectLocationSuggestion(currentSuggestions[currentSuggestionIndex]);
+            } else if (event.key === 'Escape') {
+                suggestionsDiv.style.display = 'none';
+                currentSuggestionIndex = -1;
+            }
+        }
+
+        function scrollToSuggestion() {
+            if (currentSuggestionIndex >= 0) {
+                const items = document.querySelectorAll('.location-suggestion-item');
+                if (items[currentSuggestionIndex]) {
+                    items[currentSuggestionIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        }
+
+        function handleLocationFocus() {
+            const input = document.getElementById('location');
+            if (input.value.trim().length >= 2) {
+                handleLocationInput();
+            }
+        }
+
+        function handleLocationBlur() {
+            setTimeout(() => {
+                if (!isSelectingSuggestion) {
+                    document.getElementById('location-suggestions').style.display = 'none';
+                    currentSuggestionIndex = -1;
+                }
+            }, 200);
+        }
+
+        function usePreciseLocation() {
+            const statusDiv = document.getElementById('location-status');
+            statusDiv.innerHTML = '<span style="color: #667eea;">📍 Getting your location...</span>';
+            
+            if (!navigator.geolocation) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">Geolocation is not supported by your browser.</span>';
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    
+                    registrationLatitude = lat;
+                    registrationLongitude = lon;
+                    
+                    statusDiv.innerHTML = '<span style="color: #28a745;">📍 Location found! Reverse geocoding...</span>';
+                    
+                    try {
+                        const reverseGeocodeUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`;
+                        const response = await fetch(reverseGeocodeUrl, {
+                            headers: { 'User-Agent': 'SkillSwap/1.0' }
+                        });
+                        const data = await response.json();
+                        
+                        let cityName = '';
+                        if (data.address) {
+                            const addr = data.address;
+                            const city = addr.city || addr.town || addr.village || addr.municipality || '';
+                            const state = addr.state || '';
+                            const stateCode = addr.state_code || '';
+                            
+                            if (city && (state || stateCode)) {
+                                cityName = `${city}, ${stateCode || state}`;
+                            } else if (city) {
+                                cityName = city;
+                            } else if (state) {
+                                cityName = state;
+                            }
+                        }
+                        
+                        document.getElementById('location').value = cityName || `${lon.toFixed(4)}, ${lat.toFixed(4)}`;
+                        registrationLocation = document.getElementById('location').value;
+                        
+                        statusDiv.innerHTML = `<span style="color: #28a745;">✅ Location set: ${cityName || 'Coordinates saved'}</span>`;
+                    } catch (error) {
+                        console.error('Error reverse geocoding:', error);
+                        document.getElementById('location').value = `${lon.toFixed(4)}, ${lat.toFixed(4)}`;
+                        registrationLocation = document.getElementById('location').value;
+                        statusDiv.innerHTML = '<span style="color: #ffc107;">⚠️ Coordinates saved (could not get city name)</span>';
+                    }
+                },
+                (error) => {
+                    let errorMsg = 'Error getting location: ';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMsg += 'Permission denied. Please enable location access.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMsg += 'Location unavailable.';
+                            break;
+                        case error.TIMEOUT:
+                            errorMsg += 'Request timeout.';
+                            break;
+                        default:
+                            errorMsg += 'Unknown error.';
+                            break;
+                    }
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">${errorMsg}</span>`;
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+
         document.getElementById('register-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            const locationValue = document.getElementById('location').value.trim();
+            const showLocation = document.getElementById('showLocation').checked;
+            
+            // If location text is provided but no coordinates, try to geocode it
+            if (locationValue && !registrationLatitude && !registrationLongitude) {
+                const statusDiv = document.getElementById('location-status');
+                statusDiv.innerHTML = '<span style="color: #667eea;">📍 Geocoding location...</span>';
+                
+                try {
+                    // Try multiple query formats for better accuracy
+                    const queryFormats = [
+                        locationValue + ', USA',
+                        locationValue,
+                        locationValue.includes(',') ? locationValue + ', United States' : locationValue
+                    ];
+                    
+                    let geocoded = false;
+                    for (const query of queryFormats) {
+                        const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1&countrycodes=us`;
+                        const geocodeResponse = await fetch(geocodeUrl, {
+                            headers: { 'User-Agent': 'SkillSwap/1.0' }
+                        });
+                        const geocodeData = await geocodeResponse.json();
+                        
+                        if (geocodeData.length > 0) {
+                            registrationLatitude = parseFloat(geocodeData[0].lat);
+                            registrationLongitude = parseFloat(geocodeData[0].lon);
+                            statusDiv.innerHTML = '<span style="color: #28a745;">✅ Location geocoded</span>';
+                            geocoded = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!geocoded) {
+                        statusDiv.innerHTML = '<span style="color: #ffc107;">⚠️ Could not geocode location. Registration will continue without coordinates.</span>';
+                    }
+                } catch (error) {
+                    console.error('Error geocoding location:', error);
+                    statusDiv.innerHTML = '<span style="color: #ffc107;">⚠️ Error geocoding. Registration will continue.</span>';
+                }
+            }
             
             const userData = {
                 email: document.getElementById('email').value,
                 passwordHash: document.getElementById('password').value, // TODO: Hash this properly
                 firstName: document.getElementById('firstName').value,
                 lastName: document.getElementById('lastName').value,
-                university: document.getElementById('university').value
+                university: document.getElementById('university').value,
+                latitude: registrationLatitude,
+                longitude: registrationLongitude,
+                showLocation: showLocation && (registrationLatitude !== null || registrationLongitude !== null)
             };
             
             try {
@@ -74,6 +377,28 @@
                 
                 if (response.ok) {
                     const user = await response.json();
+                    
+                    // If location text was provided, also create/update profile with location
+                    if (locationValue && user.userId) {
+                        try {
+                            const profileData = {
+                                user: { userId: user.userId },
+                                location: locationValue,
+                                latitude: registrationLatitude,
+                                longitude: registrationLongitude,
+                                showLocation: showLocation && (registrationLatitude !== null || registrationLongitude !== null)
+                            };
+                            
+                            await fetch('/api/profiles', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(profileData)
+                            });
+                        } catch (profileError) {
+                            console.error('Error creating profile with location:', profileError);
+                        }
+                    }
+                    
                     document.getElementById('success-message').textContent = 'Registration successful!';
                     document.getElementById('success-message').style.display = 'block';
                     setTimeout(() => {
