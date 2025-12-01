@@ -5,9 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { userAPI, profileAPI, userSkillAPI, userInterestAPI, userOrganizationAPI, userLanguageAPI } from '../../src/services/api';
+import { userAPI, profileAPI, userSkillAPI, userInterestAPI, userOrganizationAPI, userLanguageAPI, photoAPI } from '../../src/services/api';
 import { theme } from '../../src/styles/theme';
 
 export default function ViewProfile() {
@@ -19,6 +20,7 @@ export default function ViewProfile() {
   const [interests, setInterests] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [languages, setLanguages] = useState([]);
+  const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,6 +47,17 @@ export default function ViewProfile() {
       setInterests(userInterests.filter(i => i.user?.userId === parseInt(userId)));
       setOrganizations(userOrgs.filter(o => o.user?.userId === parseInt(userId)));
       setLanguages(userLangs.filter(l => l.user?.userId === parseInt(userId)));
+
+      // Load photos
+      if (currentProfile?.profileId) {
+        try {
+          const profilePhotos = await photoAPI.getByProfile(currentProfile.profileId);
+          setPhotos(profilePhotos || []);
+        } catch (error) {
+          console.error('Error loading photos:', error);
+          setPhotos([]);
+        }
+      }
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
@@ -77,11 +90,19 @@ export default function ViewProfile() {
         <Text style={styles.backButtonText}>← Back</Text>
       </TouchableOpacity>
       <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user.firstName?.[0]}{user.lastName?.[0]}
-          </Text>
-        </View>
+        {photos.length > 0 && photos[0]?.photoUrl ? (
+          <Image
+            source={{ uri: photos[0].photoUrl }}
+            style={styles.avatarImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {user.firstName?.[0]}{user.lastName?.[0]}
+            </Text>
+          </View>
+        )}
         <Text style={styles.name}>
           {user.firstName} {user.lastName}
         </Text>
@@ -154,16 +175,25 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: theme.spacing.xl,
+    marginBottom: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: theme.colors.accentPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: theme.spacing.md,
+  },
+  avatarImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: theme.spacing.md,
+    borderWidth: 3,
+    borderColor: theme.colors.accentPrimary,
   },
   avatarText: {
     fontSize: 40,
@@ -171,42 +201,46 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   name: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: theme.colors.textPrimary,
     marginBottom: theme.spacing.xs,
+    textAlign: 'center',
   },
   major: {
-    fontSize: 18,
+    fontSize: 16,
     color: theme.colors.accentPrimary,
     fontWeight: '600',
     marginBottom: theme.spacing.xs,
+    textAlign: 'center',
   },
   location: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.textSecondary,
+    textAlign: 'center',
   },
   section: {
     backgroundColor: theme.colors.bgCard,
     borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.lg,
+    padding: theme.spacing.md,
     marginBottom: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.borderColor,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.md,
-    borderBottomWidth: 2,
+    marginBottom: theme.spacing.sm,
+    borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderColor,
-    paddingBottom: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
   },
   sectionText: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.textSecondary,
-    lineHeight: 24,
+    lineHeight: 20,
+    textAlign: 'left',
   },
   skillItem: {
     padding: theme.spacing.sm,
@@ -216,7 +250,8 @@ const styles = StyleSheet.create({
   },
   skillText: {
     color: theme.colors.textPrimary,
-    fontSize: 16,
+    fontSize: 14,
+    textAlign: 'left',
   },
   interestItem: {
     padding: theme.spacing.sm,
@@ -226,7 +261,8 @@ const styles = StyleSheet.create({
   },
   interestText: {
     color: theme.colors.textPrimary,
-    fontSize: 16,
+    fontSize: 14,
+    textAlign: 'left',
   },
   errorText: {
     color: theme.colors.textSecondary,

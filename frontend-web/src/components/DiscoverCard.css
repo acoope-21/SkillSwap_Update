@@ -68,6 +68,15 @@
   flex-shrink: 0;
 }
 
+.avatar-image {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: var(--shadow-lg);
+  flex-shrink: 0;
+}
+
 .card-content {
   display: flex;
   flex-direction: column;

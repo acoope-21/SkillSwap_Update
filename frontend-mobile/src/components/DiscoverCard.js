@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   PanResponder,
   TouchableOpacity,
   Dimensions,
+  Image,
 } from 'react-native';
 import { theme } from '../styles/theme';
 
@@ -71,11 +72,19 @@ export default function DiscoverCard({ user, onSwipe, onViewProfile }) {
       </TouchableOpacity>
 
       <View style={styles.avatarContainer}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user.firstName?.[0]}{user.lastName?.[0]}
-          </Text>
-        </View>
+        {user.photoUrl ? (
+          <Image
+            source={{ uri: user.photoUrl }}
+            style={styles.avatarImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {user.firstName?.[0]}{user.lastName?.[0]}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.content}>
@@ -168,6 +177,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accentPrimary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...theme.shadows.lg,
+  },
+  avatarImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     ...theme.shadows.lg,
   },
   avatarText: {
